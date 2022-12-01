@@ -1,0 +1,29 @@
+{
+    "name": "Martian",
+    "extensionID": "efbglgofoippbgcjepnhiblaibcnclgk",
+    "functions": {
+        "init": [
+            ["button", "I already have a Wallet", "click"],
+            ["button", "Private Key", "click"],
+            ["input", "Private Key", "type", "$privateKey"],
+            ["button", "IMPORT WALLET", "click"],
+            ["input", 0, "type", "$password"],
+            ["input", 1, "type", "$password"],
+            ["checkbox", 0, "click"],
+            ["button", "Continue", "click"],
+            ["button", "Continue", "click"],
+            ["button", "Continue", "click"],
+            ["button", "Finish", "click"]
+        ],
+        "unlock": [
+            ["input", "Enter your password", "type", "$password"],
+            ["button", "Unlock", "click"]
+        ],
+        "approve": [
+            ["button", "Approve", "click"]
+        ],
+        "cancel": [
+            ["button", "Cancel", "click"]
+        ]
+    }
+}
