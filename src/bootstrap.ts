@@ -26,9 +26,13 @@ export async function bootstrap(extentionPath: string) {
         ],
         ignoreDefaultArgs: ['--disable-extensions', '--enable-automation'],
     });
-    await browser.waitForTarget(async target=>target.url().startsWith('chrome-extension://') && null !== await target.page()).then(target=>target.page()) as Page;
+    const extPage = await browser.waitForTarget(async target=>target.url().startsWith('chrome-extension://') && null !== await target.page()).then(target=>target.page()) as Page;
+    const extentionURI = extPage.url();
     const pages = await browser.pages();
     await Promise.all(pages.filter(page=>page.url()==='about:blank').map(page=>page.close()));
     
-    return browser
+    return {
+        browser,
+        extentionURI
+    };
 };
