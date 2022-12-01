@@ -82,30 +82,27 @@ export class Executor {
         }
     }
 
-    async walletCall(func: string, env:{[key:string]:any} = {}) {
+    async walletCall(funcs: string|string[], env:{[key:string]:any} = {}) {
         const backup = this.currentPage;
         const walletPage = await this.walletPage();
         await this.switchPage(walletPage);
-        const operators = this.walletData.functions[func];
-        await this.execute(operators, env);
+        if(typeof funcs === 'string') funcs = [funcs];
+        for(const func of funcs) {
+            const operators = this.walletData.functions[func];
+            await this.execute(operators, env);
+        }
         await this.switchPage(backup);
     }
 
-    async run() {
+    async run(follower: boolean, env: {[key:string]:any}) {
         // init wallet, import private
-        await this.walletCall('init', {$privateKey:'0x8284169a7564153e0d767176164db1466f5b2ba03abfd587702d44c7dda0a690'});
+        await this.walletCall('init', env);
         await this.openAppPage();
         const click = (text: string) => this.button(text).then(button=>this.click(button));
-        // select wallet
-        await click(this.walletData.name);
-        // unlock wallet
-        await this.walletCall('unlock');
-        // approve connect
-        await this.walletCall('approve');
-        // register
-        await click('Register');
-        // approve register transaction
-        await this.walletCall('approve');
+        // select wallet and approve
+        await click(this.walletData.name).then(()=>this.walletCall(['unlock', 'approve'], env));
+        // register and wallet approve
+        await click('Register').then(()=>this.walletCall('approve'));
     }
 
     async close() {
