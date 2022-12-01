@@ -6,6 +6,7 @@
   "license": "MIT",
   "dependencies": {
     "@types/node": "^18.11.9",
+    "aptos": "^1.4.0",
     "extract-zip": "^2.0.1",
     "node-fetch": "2",
     "puppeteer": "^19.3.0",
@@ -20,6 +21,7 @@
     "ts-node": "^10.9.1"
   },
   "scripts": {
+    "start": "ts-node src/index.ts",
     "build": "yarn tsc",
     "test": "jest"
   }
