@@ -1,14 +1,32 @@
 /* eslint-disable import/no-extraneous-dependencies */
 import { Browser, ElementHandle, Page } from 'puppeteer';
 import { bootstrap } from './bootstrap';
-import { Operator, WalletData } from './wallet';
+import { Operator, WalletProfile } from './wallet';
+
+const signals = {} as { [key: string]: any };
+
+const sendSignal = (key: string) => {
+    if (signals[key]) {
+        signals[key]();
+        delete signals[key];
+    } else {
+        signals[key] = true;
+    }
+}
+
+const waitSignal = (key: string) => {
+    if (signals[key]) return Promise.resolve();
+    return new Promise((resolve) => signals[key] = resolve);
+}
 
 export class Executor {
-    currentPage: Page | undefined
+    static DefaultTimeout = 2 * 60 * 1000;
+    currentPage: Page | undefined;
+    walletEnv: { [key: string]: any } = {};
     constructor(
         public readonly appUrl: string,
         public readonly browser: Browser,
-        public readonly walletData: WalletData,
+        public readonly walletProfile: WalletProfile,
         public readonly extentionURI: string,
     ) {
     }
@@ -20,17 +38,17 @@ export class Executor {
 
     async openAppPage() {
         const page = await this.browser.newPage();
-        await this.switchPage(page);
         await page.goto(this.appUrl, { waitUntil: 'load' });
+        await page.setDefaultTimeout(Executor.DefaultTimeout);
         return page;
     }
 
     async openWalletPage() {
         const page = await this.browser.newPage();
-        await this.switchPage(page);
         const prefix = 'chrome-extension://';
         const id = this.extentionURI.slice(prefix.length).split('/')[0];
-        await page.goto(prefix+id+'/index.html', { waitUntil: 'domcontentloaded' });
+        await page.goto(prefix + id + '/index.html', { waitUntil: 'domcontentloaded' });
+        await page.setDefaultTimeout(Executor.DefaultTimeout);
         return page;
     }
 
@@ -40,18 +58,33 @@ export class Executor {
         ).then(target => target.page()) as Promise<Page>;
     }
 
-    async button(text: string) {
-        const xpath = `//*[text()="${text}"]`;
+    async hasText(text: string, contain = false, index = 0, timeout = 100): Promise<boolean> {
+        const xpath = contain ? `(//*[contain(text(),"${text}")])[${index + 1}]` : `(//*[text()="${text}"])[${index + 1}]`;
         console.log('button:', xpath);
         const currentPage = this.currentPage!;
-        console.log(currentPage.url());
-        const found = await currentPage.waitForXPath(xpath, { visible: true });
-        if (found === null) throw `button(${text}) not exist`;
-        console.log('found:', await found.evaluate(el => (el as any).outerHTML));
-        return found!;
+        try {
+            const found = await currentPage.waitForXPath(xpath, { visible: true, timeout });
+            return found !== null
+        } catch {
+            return false;
+        }
     }
 
-    async input(placeholderOrIndex: string | number, type:'input'|'textarea' = 'input') {
+    async waitText(text: string, contain = false, index = 0) {
+        return await this.button(text, contain, index);
+    }
+
+    async button(text: string, contain = false, index = 0) {
+        const xpath = contain ? `(//*[contain(text(),"${text}")])[${index + 1}]` : `(//*[text()="${text}"])[${index + 1}]`;
+        console.log('button:', xpath);
+        const currentPage = this.currentPage!;
+        const found = await currentPage.waitForXPath(xpath, { visible: true });
+        if (found === null) throw `button(${text}) not exist`;
+        //console.log('found:', await found.evaluate(el => (el as any).outerHTML));
+        return await this.waitEnable(found);
+    }
+
+    async input(placeholderOrIndex: string | number, type: 'input' | 'textarea' = 'input') {
         const currentPage = this.currentPage!;
         if (typeof placeholderOrIndex === 'number') {
             const selector = type;
@@ -75,14 +108,44 @@ export class Executor {
         return checkboxs[index];
     }
 
-    async click(node: ElementHandle<Node>) {
+    async _click(node: ElementHandle<Node>) {
         console.log('click')
         await node.evaluate((el: any) => el.click())
     }
 
-    async type(node: ElementHandle<Node>, value: string) {
+    async _type(node: ElementHandle<Node>, value: string) {
         console.log('type')
         await node.type(value);
+        await this._blur(node);
+    }
+
+    async _blur(node: ElementHandle<Node>) {
+        console.log('blur')
+        await node.evaluate((el: any) => el.blur());
+    }
+
+    click(text: string) {
+        return this.button(text).then(button => this._click(button));
+    }
+
+    clicks(texts: string[]) {
+        return texts.reduce((t, text) => t.then(() => this.click(text)), Promise.resolve())
+    }
+
+    type(text: string | number, value: string) {
+        return this.input(text).then(input => this._type(input!, value));
+    }
+
+    async waitEnable(node: ElementHandle<Node>) {
+        let retry = Executor.DefaultTimeout / 100;
+        while (retry-- > 0) {
+            const property = await node.getProperty('disabled');
+            const disabled = await property.jsonValue();
+            if (!disabled) break;
+            await sleep(100);
+        };
+        if (retry <= 0) throw "not enable";
+        return node;
     }
 
     async execute(operators: Operator[], env: { [key: string]: any }) {
@@ -90,49 +153,199 @@ export class Executor {
             const [element, selector, action, arg] = operator;
             const node = await (this as any)[element](selector);
             const value = env[arg] || arg;
-            await (this as any)[action](node, value);
+            await (this as any)[`_${action}`](node, value);
         }
     }
 
-    async walletCall(funcs: string | string[], env: { [key: string]: any } = {}) {
+    async walletCall(funcs: string | string[], env: { [key: string]: any } = this.walletEnv) {
         const backup = this.currentPage;
         const walletPage = await this.walletPage();
         await this.switchPage(walletPage);
         if (typeof funcs === 'string') funcs = [funcs];
         for (const func of funcs) {
-            const operators = this.walletData.functions[func];
+            const operators = this.walletProfile.functions[func];
             await this.execute(operators, env);
         }
         await this.switchPage(backup);
     }
 
-    async run(follower: boolean, env: { [key: string]: any }) {
-        // init wallet, import private
-        await this.walletCall('init', env);
-        await this.openAppPage();
-        const click = (text: string) => this.button(text).then(button => this.click(button));
-        // select wallet and approve
-        await click(this.walletData.name).then(() => this.walletCall(['unlock', 'approve'], env));
-        // register and wallet approve
-        await click('Register').then(() => this.walletCall('approve'));
+    async doRegister() {
+        await this.click('Register')
+        await this.walletCall('approve');
     }
 
-    async transfer(toAddrs: string[], value: string, env: { [key: string]: any }) {
+    async doWalletConnect() {
+        await this.click(this.walletProfile.name);
+        await this.walletCall('approve');
+    }
+
+    async doMsafeCreate() {
+        await this.click('Create a Safe');
+        await this.type(1, this.walletEnv.$owners[0]);
+        await this.click('Next');
+        await this.waitText('Your momentum Safe Wallet address:');
+        await sleep(3000);
+        await this.click('Sign').then(() => this.walletCall('approve'));
+        await this.click('Submit').then(() => this.walletCall('approve'));
+    }
+
+    async doRefreshPendingCreation() {
+        const textButton = await this.button('Every transaction need confirmation from');
+        await textButton.evaluate((el: any) => el.nextSibling.nextSibling.nextSibling.click())
+    }
+
+    async doSelectMsafe() {
+        // select msafe
+        while (true) {
+            const elem = await this.button('My Safes');
+            const hasPending = await elem.evaluate((el: any) => el.parentElement.nextSibling.children.length > 0);
+            if (hasPending) {
+                await elem.evaluate((el: any) => el.parentElement.nextSibling.children[0].click());
+                break;
+            }
+            await elem.evaluate((el: any) => el.nextSibling.click());
+            await sleep(3000);
+        }
+    }
+
+    async doSelectPendingMsafe() {
+        while (true) {
+            const elem = await this.button('Pending creation');
+            const hasPending = await elem.evaluate((el: any) => el.parentElement.nextSibling.children.length > 0);
+            if (hasPending) {
+                await elem.evaluate((el: any) => el.parentElement.nextSibling.children[0].click());
+                break;
+            }
+            await elem.evaluate((el: any) => el.nextSibling.click());
+            await sleep(3000);
+        }
+    }
+
+    async doAcceptPendingMsafe() {
+        await this.click('Sign now').then(() => this.walletCall('approve'));
+        await this.click('Submit').then(() => this.walletCall('approve'));
+        const success = await this.waitText('Success');
+        await success.evaluate((el: any) => el.parentElement.parentElement.parentElement?.querySelector('button').click());
+    }
+
+    async doInitTransaction() {
+        await this.clicks(['New Transaction', 'Coin transfer']);
+        await this.input(0, 'textarea').then(textarea => this._type(textarea!, this.walletEnv.$to))
+        await this.type('Please enter amount', '0.095');
+        await this.click('Review');
+        await this.click('Submit').then(() => this.walletCall('approve'));
+        await this.button('Submit', false, 1).then(submit => this._click(submit)).then(() => this.walletCall('approve'));
+        await this.button('Transaction created');
+    }
+
+    async doApproveTransaction() {
+        await this.click('Queue');
+        if (!await this.hasText('Pending')) {
+            await this.click('Refresh');
+        }
+        await this.click('Pending');
+        await this.click('Confirm').then(() => this.walletCall('approve'));
+        await this.click('Submit').then(() => this.walletCall('approve'));
+        await this.button('Transaction sent!')
+    }
+
+    async doWaitTransaction(text: string = 'Send Coin') {
+        await this.click('History');
+        while (!await this.hasText(text)) {
+            await this.click('Refresh');
+            await sleep(1000);
+        }
+    }
+
+    async doCheckTransactionSuccess(text: string = 'Send Coin') {
+        const sendCoinItem = await this.button(text)
+        const success = await sendCoinItem.evaluate((el: any) => el.parentElement.nextElementSibling.nextElementSibling.nextElementSibling.textContent == 'Success')
+        if (!success) throw "not success";
+        console.log("success!")
+    }
+    // unlock wallet and switch to testnet, then reload app page
+    async initTestPages() {
+        const appPage = this.openAppPage();
+        const walletPage = await this.openWalletPage();
+        await this.walletCall('unlock');
+        await this.switchTestnet(walletPage);
+        await appPage.then(page => page.reload().then(() => this.switchPage(page)));
+        await walletPage.close();
+    }
+
+    async run(follower: boolean, env: { [key: string]: any }) {
+        this.walletEnv = env;
+        // init wallet, import private
+        await this.walletCall('init');
+        await this.initTestPages();
+
+        // select a wallet to connect
+        await this.doWalletConnect();
+
+        await sleep(5000);
+        // register and wallet approve
+        await this.doRegister();
+
+        if (!follower) {
+            await waitSignal('register');
+            await sleep(2000);
+            await this.doMsafeCreate();
+            sendSignal('createMsafe');
+            await waitSignal('createMsafe-confirm');
+            await this.doRefreshPendingCreation();
+            // select msafe
+            await this.doSelectMsafe();
+            await this.doInitTransaction();
+            sendSignal('initTransaction')
+            await waitSignal('initTransaction-confirm');
+        } else {
+            sendSignal('register')
+            await waitSignal('createMsafe');
+
+            await this.doSelectPendingMsafe();
+            await this.doAcceptPendingMsafe();
+            sendSignal('createMsafe-confirm');
+            await waitSignal('initTransaction');
+            await this.doApproveTransaction();
+            sendSignal('initTransaction-confirm');
+        }
+
+        const txText = 'Send Coin';
+        await this.doWaitTransaction(txText);
+        await this.doCheckTransactionSuccess(txText);
+    }
+
+    async switchTestnet(page: Page) {
+        const backup = this.currentPage;
+        await this.switchPage(page);
+        while (true) {
+            await this.clicks(['Aptos Mainnet 1', 'Aptos', 'Testnet']);
+            if (await this.hasText('Aptos Testnet')) break;
+        }
+        await this.switchPage(backup);
+    }
+
+    async transfer(toAddrs: string[], values: string[], env: { [key: string]: any }) {
         const backup = this.currentPage;
         await this.walletCall('init', env);
         const page = await this.openWalletPage();
         await this.walletCall('unlock', env);
-        const click = (text: string) => this.button(text).then(button => this.click(button));
-        const type = (text: string | number, value: string) => this.input(text).then(input => this.type(input!, value));
-        for (const to of toAddrs) {
+        // switch to testnet
+        await this.switchTestnet(page);
+        await this.switchPage(page);
+        console.log(toAddrs);
+        for (let i = 0; i < toAddrs.length; i++) {
+            const to = toAddrs[i];
+            const value = values[i];
+            console.log('transfer to:', to, value);
             // wait balance flush
-            await this.button('Aptos Coin');
-            await click('Send');
-            await type(0, value);
-            await this.input(0, 'textarea').then(input=>this.type(input!, to));
-            await click('Preview');
-            await click('Confirm and Send');
             await page.reload();
+            await this.button('Aptos Coin');
+            await this.click('Send');
+            await this.type(0, value);
+            await this.input(0, 'textarea').then(input => this._type(input!, to));
+            await this.clicks(['Preview', 'Confirm and Send']);
+            await this.button('Aptos Coin');
         };
         await page.close();
         await this.switchPage(backup);
@@ -142,9 +355,9 @@ export class Executor {
         await this.browser.close();
     }
 
-    static async new(appUrl: string, walletData: WalletData, walletDir: string): Promise<Executor> {
-        const { browser, extentionURI } = await bootstrap(walletDir);
-        return new Executor(appUrl, browser, walletData, extentionURI);
+    static async new(appUrl: string, walletProfile: WalletProfile, walletDir: string, first: boolean): Promise<Executor> {
+        const { browser, extentionURI } = await bootstrap(walletDir, first);
+        return new Executor(appUrl, browser, walletProfile, extentionURI);
     }
 }
 
