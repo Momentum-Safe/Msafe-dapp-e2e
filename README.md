@@ -7,7 +7,7 @@ This repository contains an end-to-end test for the Msafe dapp. The test checks 
 To use this test, clone the repository and install the dependencies:
 
 ```bash
-git clone https://github.com/LeviHHH/Msafe-dapp-e2e.git
+git clone https://github.com/Momentum-Safe/Msafe-dapp-e2e.git
 cd Msafe-dapp-e2e
 npm install
 ```
