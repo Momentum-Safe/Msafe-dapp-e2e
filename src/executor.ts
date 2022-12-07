@@ -1,23 +1,8 @@
 /* eslint-disable import/no-extraneous-dependencies */
 import { Browser, ElementHandle, Page } from 'puppeteer';
 import { bootstrap } from './bootstrap';
+import { waitSignal, Signal, sendSignal } from './signals';
 import { Operator, WalletProfile } from './wallet';
-
-const signals = {} as { [key: string]: any };
-
-const sendSignal = (key: string) => {
-    if (signals[key]) {
-        signals[key]();
-        delete signals[key];
-    } else {
-        signals[key] = true;
-    }
-}
-
-const waitSignal = (key: string) => {
-    if (signals[key]) return Promise.resolve();
-    return new Promise((resolve) => signals[key] = resolve);
-}
 
 export class Executor {
     static DefaultTimeout = 2 * 60 * 1000;
@@ -58,7 +43,7 @@ export class Executor {
         ).then(target => target.page()) as Promise<Page>;
     }
 
-    async hasText(text: string, contain = false, index = 0, timeout = 100): Promise<boolean> {
+    async hasText(text: string, contain = false, index = 0, timeout = 1000): Promise<boolean> {
         const xpath = contain ? `(//*[contain(text(),"${text}")])[${index + 1}]` : `(//*[text()="${text}"])[${index + 1}]`;
         console.log('button:', xpath);
         const currentPage = this.currentPage!;
@@ -116,6 +101,7 @@ export class Executor {
     async _type(node: ElementHandle<Node>, value: string) {
         console.log('type')
         await node.type(value);
+        await sleep(1);
         await this._blur(node);
     }
 
@@ -183,7 +169,7 @@ export class Executor {
         await this.click('Create a Safe');
         await this.type(1, this.walletEnv.$owners[0]);
         await this.click('Next');
-        await this.waitText('Your momentum Safe Wallet address:');
+        await this.waitText('Your MSafe Wallet address:');
         await sleep(3000);
         await this.click('Sign').then(() => this.walletCall('approve'));
         await this.click('Submit').then(() => this.walletCall('approve'));
@@ -287,27 +273,27 @@ export class Executor {
         await this.doRegister();
 
         if (!follower) {
-            await waitSignal('register');
+            await waitSignal(Signal.Register);
             await sleep(2000);
             await this.doMsafeCreate();
-            sendSignal('createMsafe');
-            await waitSignal('createMsafe-confirm');
+            sendSignal(Signal.CreateMsafe);
+            await waitSignal(Signal.CreateMsafeConfirm);
             await this.doRefreshPendingCreation();
             // select msafe
             await this.doSelectMsafe();
             await this.doInitTransaction();
-            sendSignal('initTransaction')
-            await waitSignal('initTransaction-confirm');
+            sendSignal(Signal.InitTransaction)
+            await waitSignal(Signal.InitTransactionConfirm);
         } else {
-            sendSignal('register')
-            await waitSignal('createMsafe');
+            sendSignal(Signal.Register)
+            await waitSignal(Signal.CreateMsafe);
 
             await this.doSelectPendingMsafe();
             await this.doAcceptPendingMsafe();
-            sendSignal('createMsafe-confirm');
-            await waitSignal('initTransaction');
+            sendSignal(Signal.CreateMsafeConfirm);
+            await waitSignal(Signal.InitTransaction);
             await this.doApproveTransaction();
-            sendSignal('initTransaction-confirm');
+            sendSignal(Signal.InitTransactionConfirm);
         }
 
         const txText = 'Send Coin';
