@@ -14,6 +14,7 @@ npm install
 
 Then, run the test using the following command:
 ```bash
+export APPURL=$APPURL
 export PRIKEY=$FAUCET_PRIVATE_KEY
 npm run start
 ```

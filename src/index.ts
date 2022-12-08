@@ -5,7 +5,7 @@ import { downloadExtension } from "./bootstrap";
 import { AptosAccount, HexString } from "aptos";
 
 //const appURL = 'http://localhost:3000';
-const appURL = 'https://testnet.m-safe.io';
+const appURL = process.env.APPURL || 'https://testnet.m-safe.io';
 
 const extensionPasswd = "Msafe12345";
 const faucetAccount = new AptosAccount(HexString.ensure(process.env.PRIKEY as string).toUint8Array());
