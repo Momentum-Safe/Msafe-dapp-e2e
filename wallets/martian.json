@@ -24,6 +24,21 @@
         ],
         "cancel": [
             ["button", "Cancel", "click"]
+        ],
+        "switch_testnet": [
+            ["button", "Aptos Mainnet 1", "click"],
+            ["button", "Aptos", "click"],
+            ["button", "Testnet", "click"],
+            ["button", "Aptos Testnet"]
+        ],
+        "transfer": [
+            ["button", "Aptos Coin"],
+            ["button", "Send", "click"],
+            ["input", 0, "type", "$amount"],
+            ["textarea", 0, "type", "$to"],
+            ["button", "Preview", "click"],
+            ["button", "Confirm and Send", "click"],
+            ["button", "Aptos Coin"]
         ]
     }
 }
