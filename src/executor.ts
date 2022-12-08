@@ -158,6 +158,7 @@ export class Executor {
     async doRegister() {
         await this.click('Register')
         await this.walletCall('approve');
+        await this.waitText('Success!');
     }
 
     async doWalletConnect() {
@@ -274,7 +275,6 @@ export class Executor {
 
         if (!follower) {
             await waitSignal(Signal.Register);
-            await sleep(2000);
             await this.doMsafeCreate();
             sendSignal(Signal.CreateMsafe);
             await waitSignal(Signal.CreateMsafeConfirm);
