@@ -22,7 +22,7 @@ function loadWalletProfiles(walletDir: string) {
 function newAptosAccount() {
     while (true) {
         const acc = new AptosAccount();
-        if (acc.address().noPrefix()[0] === '0') continue;
+        if (acc.address().noPrefix()[0] !== '0') continue;
         return acc;
     }
 }
