@@ -105,7 +105,7 @@ export class Executor {
     async _type(node: ElementHandle<Node>, value: string) {
         console.log('type')
         await node.type(value);
-        await sleep(1*value.length + 5);
+        await this.sleep(1*value.length + 5);
         await this._blur(node);
     }
 
@@ -132,7 +132,7 @@ export class Executor {
             const property = await node.getProperty('disabled');
             const disabled = await property.jsonValue();
             if (!disabled) break;
-            await sleep(100);
+            await this.sleep(100);
         };
         if (retry <= 0) throw "not enable";
         return node;
@@ -175,7 +175,7 @@ export class Executor {
         await this.type(1, this.walletEnv.$owners[0]);
         await this.click('Next');
         await this.waitText('Your MSafe Wallet address:');
-        await sleep(3000);
+        await this.sleep(3000);
         await this.click('Sign').then(() => this.walletCall('approve'));
         await this.click('Submit').then(() => this.walletCall('approve'));
     }
@@ -195,7 +195,7 @@ export class Executor {
                 break;
             }
             await elem.evaluate((el: any) => el.nextSibling.click());
-            await sleep(3000);
+            await this.sleep(3000);
         }
     }
 
@@ -208,13 +208,13 @@ export class Executor {
                 break;
             }
             await elem.evaluate((el: any) => el.nextSibling.click());
-            await sleep(3000);
+            await this.sleep(3000);
         }
     }
 
     async doAcceptPendingMsafe() {
         await this.click('Sign now')
-        await sleep(100); // delay, or the martian wallet may throw error: 'Something went wrong'
+        await this.sleep(100); // delay, or the martian wallet may throw error: 'Something went wrong'
         await this.walletCall('approve');
         await this.click('Submit').then(() => this.walletCall('approve'));
         const success = await this.waitText('Success');
@@ -246,7 +246,7 @@ export class Executor {
         await this.click('History');
         while (!await this.hasText(text)) {
             await this.click('Refresh');
-            await sleep(1000);
+            await this.sleep(1000);
         }
     }
 
@@ -275,7 +275,7 @@ export class Executor {
         // select a wallet to connect
         await this.doWalletConnect();
 
-        await sleep(5000);
+        await this.sleep(5000);
         // register and wallet approve
         await this.doRegister();
 
@@ -344,13 +344,12 @@ export class Executor {
         await this.browser.close();
     }
 
+    sleep(ms: number) {
+        return new Promise(resolve => setTimeout(resolve, ms));
+    }
+
     static async new(appUrl: string, walletProfile: WalletProfile, walletDir: string, first: boolean): Promise<Executor> {
         const { browser, extentionURI } = await bootstrap(walletDir, first);
         return new Executor(appUrl, browser, walletProfile, extentionURI);
     }
-}
-
-
-function sleep(ms: number) {
-    return new Promise(resolve => setTimeout(resolve, ms));
 }
