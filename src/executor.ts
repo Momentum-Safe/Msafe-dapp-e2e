@@ -104,8 +104,11 @@ export class Executor {
 
     async _type(node: ElementHandle<Node>, value: string) {
         console.log('type')
-        await node.type(value);
-        await this.sleep(1*value.length + 5);
+        for(const char of value) {
+            await node.type(char);
+            await this.sleep(1);
+        }
+        await this.sleep(5);
         await this._blur(node);
     }
 
