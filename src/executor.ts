@@ -49,6 +49,7 @@ export class Executor {
         const currentPage = this.currentPage!;
         try {
             const found = await currentPage.waitForXPath(xpath, { visible: true, timeout });
+            found && await this.highlight(found, '4px solid yellow');
             return found !== null
         } catch {
             return false;
@@ -66,6 +67,7 @@ export class Executor {
         const found = await currentPage.waitForXPath(xpath, { visible: true });
         if (found === null) throw `button(${text}) not exist`;
         //console.log('found:', await found.evaluate(el => (el as any).outerHTML));
+        await this.highlight(found, '4px solid yellow');
         return await this.waitEnable(found);
     }
 
@@ -97,8 +99,15 @@ export class Executor {
         return checkboxs[index];
     }
 
+    async highlight(node: ElementHandle<Node>, border = '4px solid red') {
+        await node.evaluate((el: any, border:any) => el.style.border = border, [border]);
+        await this.sleep(500);
+    }
+
     async _click(node: ElementHandle<Node>) {
         console.log('click')
+        await this.highlight(node);
+        //await this.sleep(500);
         await node.evaluate((el: any) => el.click())
     }
 
@@ -227,7 +236,7 @@ export class Executor {
     async doInitTransaction() {
         await this.clicks(['New Transaction', 'Coin transfer']);
         await this.textarea(0).then(textarea => this._type(textarea!, this.walletEnv.$to))
-        await this.type('Please enter amount', '0.095');
+        await this.type('Please enter amount', '0.09');
         await this.click('Review');
         await this.click('Submit').then(() => this.walletCall('approve'));
         await this.button('Submit', false, 1).then(submit => this._click(submit)).then(() => this.walletCall('approve'));
