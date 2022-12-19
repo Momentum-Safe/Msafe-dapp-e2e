@@ -68,7 +68,7 @@ async function main() {
         const walletEnv = walletEnvs[i];
         await transfer(walletEnv.map(env => env.$address), ['0.2', '0.2'], walletProfile, walletDir, faucetEnv, true);
         await Promise.all([e2eTest(walletProfile, walletDir, walletEnv[0], false), e2eTest(walletProfile, walletDir, walletEnv[1], true)])
-        await Promise.all([transfer([faucetEnv.$address], ['0.082'], walletProfile, walletDir, walletEnv[0], true), transfer([faucetEnv.$address], ['0.194'], walletProfile, walletDir, walletEnv[1], false)])
+        await Promise.all([transfer([faucetEnv.$address], ['0.073'], walletProfile, walletDir, walletEnv[0], true), transfer([faucetEnv.$address], ['0.192'], walletProfile, walletDir, walletEnv[1], false)])
     }
 }
 

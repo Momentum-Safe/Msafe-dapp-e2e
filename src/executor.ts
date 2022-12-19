@@ -49,6 +49,7 @@ export class Executor {
         const currentPage = this.currentPage!;
         try {
             const found = await currentPage.waitForXPath(xpath, { visible: true, timeout });
+            found && await this.highlight(found, '4px solid yellow');
             return found !== null
         } catch {
             return false;
@@ -66,7 +67,12 @@ export class Executor {
         const found = await currentPage.waitForXPath(xpath, { visible: true });
         if (found === null) throw `button(${text}) not exist`;
         //console.log('found:', await found.evaluate(el => (el as any).outerHTML));
+        await this.highlight(found, '4px solid yellow');
         return await this.waitEnable(found);
+    }
+
+    async textarea(placeholderOrIndex: string | number) {
+        return this.input(placeholderOrIndex, 'textarea');
     }
 
     async input(placeholderOrIndex: string | number, type: 'input' | 'textarea' = 'input') {
@@ -93,15 +99,25 @@ export class Executor {
         return checkboxs[index];
     }
 
+    async highlight(node: ElementHandle<Node>, border = '4px solid red') {
+        await node.evaluate((el: any, border:any) => el.style.border = border, [border]);
+        await this.sleep(500);
+    }
+
     async _click(node: ElementHandle<Node>) {
         console.log('click')
+        await this.highlight(node);
+        //await this.sleep(500);
         await node.evaluate((el: any) => el.click())
     }
 
     async _type(node: ElementHandle<Node>, value: string) {
         console.log('type')
-        await node.type(value);
-        await sleep(1*value.length + 5);
+        for(const char of value) {
+            await node.type(char);
+            await this.sleep(1);
+        }
+        await this.sleep(5);
         await this._blur(node);
     }
 
@@ -128,7 +144,7 @@ export class Executor {
             const property = await node.getProperty('disabled');
             const disabled = await property.jsonValue();
             if (!disabled) break;
-            await sleep(100);
+            await this.sleep(100);
         };
         if (retry <= 0) throw "not enable";
         return node;
@@ -139,7 +155,7 @@ export class Executor {
             const [element, selector, action, arg] = operator;
             const node = await (this as any)[element](selector);
             const value = env[arg] || arg;
-            await (this as any)[`_${action}`](node, value);
+            action && await (this as any)[`_${action}`](node, value);
         }
     }
 
@@ -156,7 +172,7 @@ export class Executor {
     }
 
     async doRegister() {
-        await this.click('Register')
+        await this.click('Register');
         await this.walletCall('approve');
         await this.waitText('Success!');
     }
@@ -171,7 +187,7 @@ export class Executor {
         await this.type(1, this.walletEnv.$owners[0]);
         await this.click('Next');
         await this.waitText('Your MSafe Wallet address:');
-        await sleep(3000);
+        await this.sleep(3000);
         await this.click('Sign').then(() => this.walletCall('approve'));
         await this.click('Submit').then(() => this.walletCall('approve'));
     }
@@ -191,7 +207,7 @@ export class Executor {
                 break;
             }
             await elem.evaluate((el: any) => el.nextSibling.click());
-            await sleep(3000);
+            await this.sleep(3000);
         }
     }
 
@@ -204,12 +220,14 @@ export class Executor {
                 break;
             }
             await elem.evaluate((el: any) => el.nextSibling.click());
-            await sleep(3000);
+            await this.sleep(3000);
         }
     }
 
     async doAcceptPendingMsafe() {
-        await this.click('Sign now').then(() => this.walletCall('approve'));
+        await this.click('Sign now')
+        await this.sleep(100); // delay, or the martian wallet may throw error: 'Something went wrong'
+        await this.walletCall('approve');
         await this.click('Submit').then(() => this.walletCall('approve'));
         const success = await this.waitText('Success');
         await success.evaluate((el: any) => el.parentElement.parentElement.parentElement?.querySelector('button').click());
@@ -217,8 +235,8 @@ export class Executor {
 
     async doInitTransaction() {
         await this.clicks(['New Transaction', 'Coin transfer']);
-        await this.input(0, 'textarea').then(textarea => this._type(textarea!, this.walletEnv.$to))
-        await this.type('Please enter amount', '0.095');
+        await this.textarea(0).then(textarea => this._type(textarea!, this.walletEnv.$to))
+        await this.type('Please enter amount', '0.09');
         await this.click('Review');
         await this.click('Submit').then(() => this.walletCall('approve'));
         await this.button('Submit', false, 1).then(submit => this._click(submit)).then(() => this.walletCall('approve'));
@@ -240,7 +258,7 @@ export class Executor {
         await this.click('History');
         while (!await this.hasText(text)) {
             await this.click('Refresh');
-            await sleep(1000);
+            await this.sleep(1000);
         }
     }
 
@@ -269,7 +287,7 @@ export class Executor {
         // select a wallet to connect
         await this.doWalletConnect();
 
-        await sleep(5000);
+        await this.sleep(5000);
         // register and wallet approve
         await this.doRegister();
 
@@ -304,10 +322,12 @@ export class Executor {
     async switchTestnet(page: Page) {
         const backup = this.currentPage;
         await this.switchPage(page);
+        /*
         while (true) {
             await this.clicks(['Aptos Mainnet 1', 'Aptos', 'Testnet']);
             if (await this.hasText('Aptos Testnet')) break;
-        }
+        }*/
+        await this.walletCall('switch_testnet');
         await this.switchPage(backup);
     }
 
@@ -326,12 +346,7 @@ export class Executor {
             console.log('transfer to:', to, value);
             // wait balance flush
             await page.reload();
-            await this.button('Aptos Coin');
-            await this.click('Send');
-            await this.type(0, value);
-            await this.input(0, 'textarea').then(input => this._type(input!, to));
-            await this.clicks(['Preview', 'Confirm and Send']);
-            await this.button('Aptos Coin');
+            await this.walletCall('transfer', {$to: to, $amount: value});
         };
         await page.close();
         await this.switchPage(backup);
@@ -341,13 +356,12 @@ export class Executor {
         await this.browser.close();
     }
 
+    sleep(ms: number) {
+        return new Promise(resolve => setTimeout(resolve, ms));
+    }
+
     static async new(appUrl: string, walletProfile: WalletProfile, walletDir: string, first: boolean): Promise<Executor> {
         const { browser, extentionURI } = await bootstrap(walletDir, first);
         return new Executor(appUrl, browser, walletProfile, extentionURI);
     }
-}
-
-
-function sleep(ms: number) {
-    return new Promise(resolve => setTimeout(resolve, ms));
 }
